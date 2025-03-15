@@ -27,11 +27,15 @@ export default function HomeScreen() {
   const [storyImage, setStoryImage] = useState<string | null>(null);
   const [storyCaption, setStoryCaption] = useState('');
   const [showStoryForm, setShowStoryForm] = useState(false);
+  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProfile();
     fetchPosts();
     fetchStories();
+    fetchCurrentUser();
   }, []);
 
   async function fetchProfile() {
@@ -102,6 +106,51 @@ export default function HomeScreen() {
       if (data) setStories(data);
     } catch (error) {
       console.error('Error in fetchStories:', error);
+    }
+  }
+
+  async function fetchCurrentUser() {
+    const { data } = await supabase.auth.getUser();
+    if (data?.user) {
+      setUserId(data.user.id);
+      fetchLikedPosts(data.user.id);
+    }
+  }
+
+  async function fetchLikedPosts(userId: string) {
+    const { data, error } = await supabase
+      .from('likes')
+      .select('post_id')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('Error fetching liked posts:', error);
+      return;
+    }
+
+    if (data) {
+      const likedPostIds = new Set(data.map((like) => like.post_id));
+      setLikedPosts(likedPostIds);
+    }
+  }
+
+  async function fetchLikeCounts() {
+    const { data, error } = await supabase
+      .from('likes')
+      .select('post_id, count')
+      .group('post_id');
+
+    if (error) {
+      console.error('Error fetching like counts:', error);
+      return;
+    }
+
+    if (data) {
+      const counts: Record<string, number> = {};
+      data.forEach((item) => {
+        counts[item.post_id] = item.count;
+      });
+      setLikeCounts(counts);
     }
   }
 
@@ -186,6 +235,61 @@ export default function HomeScreen() {
     } catch (error) {
       console.error('Detailed error in submitStory:', error);
       alert('Failed to create story: ' + (error as Error).message);
+    }
+  }
+
+  async function handleLike(postId: string, event: any) {
+    event.stopPropagation(); // Prevent navigation to post details
+
+    if (!userId) {
+      alert('Please login to like posts');
+      return;
+    }
+
+    try {
+      const isLiked = likedPosts.has(postId);
+
+      if (isLiked) {
+        // Unlike
+        const { error } = await supabase
+          .from('likes')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', userId);
+
+        if (error) throw error;
+
+        // Update state
+        const newLikedPosts = new Set(likedPosts);
+        newLikedPosts.delete(postId);
+        setLikedPosts(newLikedPosts);
+
+        setLikeCounts((prev) => ({
+          ...prev,
+          [postId]: (prev[postId] || 1) - 1,
+        }));
+      } else {
+        // Like
+        const { error } = await supabase.from('likes').insert({
+          post_id: postId,
+          user_id: userId,
+        });
+
+        if (error) throw error;
+
+        // Update state
+        const newLikedPosts = new Set(likedPosts);
+        newLikedPosts.add(postId);
+        setLikedPosts(newLikedPosts);
+
+        setLikeCounts((prev) => ({
+          ...prev,
+          [postId]: (prev[postId] || 0) + 1,
+        }));
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error);
+      alert('Failed to update like');
     }
   }
 
@@ -297,12 +401,25 @@ export default function HomeScreen() {
               </Text>
 
               <View style={styles.postActions}>
-                <TouchableOpacity style={styles.actionButton}>
-                  <Heart size={18} color="#666" />
-                  <Text style={styles.actionText}>Like</Text>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={(e) => handleLike(post.id, e)}
+                >
+                  <Heart
+                    size={18}
+                    color={likedPosts.has(post.id) ? '#ff3b30' : '#666'}
+                    fill={likedPosts.has(post.id) ? '#ff3b30' : 'none'}
+                  />
+                  <Text style={styles.actionText}>
+                    {likeCounts[post.id] || 0}{' '}
+                    {likeCounts[post.id] === 1 ? 'Like' : 'Likes'}
+                  </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.actionButton}>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => router.push(`/posts/${post.id}`)}
+                >
                   <MessageCircle size={18} color="#666" />
                   <Text style={styles.actionText}>Comment</Text>
                 </TouchableOpacity>
