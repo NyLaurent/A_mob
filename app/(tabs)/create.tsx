@@ -1,5 +1,20 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, Modal } from 'react-native';
-import { FileText, Camera, Megaphone, MessageSquare, Image as ImageIcon, X } from 'lucide-react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  Image,
+  Modal,
+} from 'react-native';
+import {
+  FileText,
+  Camera,
+  Megaphone,
+  MessageSquare,
+  Image as ImageIcon,
+  X,
+} from 'lucide-react-native';
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
@@ -30,7 +45,9 @@ export default function CreateScreen() {
 
   async function createPost() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         console.error('No user found');
         return;
@@ -43,8 +60,8 @@ export default function CreateScreen() {
           const base64 = await new Promise((resolve) => {
             const reader = new FileReader();
             fetch(imageUri)
-              .then(response => response.blob())
-              .then(blob => {
+              .then((response) => response.blob())
+              .then((blob) => {
                 reader.onload = () => {
                   const base64data = reader.result;
                   resolve(base64data);
@@ -59,14 +76,16 @@ export default function CreateScreen() {
             .from('posts')
             .upload(`images/${fileName}`, base64.split(',')[1], {
               contentType: 'image/jpeg',
-              upsert: true
+              upsert: true,
             });
 
           if (uploadError) {
             console.error('Error uploading image:', uploadError);
           } else {
             // Get public URL
-            const { data: { publicUrl } } = supabase.storage
+            const {
+              data: { publicUrl },
+            } = supabase.storage
               .from('posts')
               .getPublicUrl(`images/${fileName}`);
             image_url = publicUrl;
@@ -77,14 +96,12 @@ export default function CreateScreen() {
       }
 
       // Create post with image if available
-      const { error: postError } = await supabase
-        .from('posts')
-        .insert({
-          user_id: user.id,
-          title,
-          content,
-          image_url,
-        });
+      const { error: postError } = await supabase.from('posts').insert({
+        user_id: user.id,
+        title,
+        content,
+        image_url,
+      });
 
       if (postError) {
         console.error('Error creating post:', postError);
@@ -97,71 +114,92 @@ export default function CreateScreen() {
       setImageUri(null);
       setShowPostForm(false);
       router.push('/posts');
-
     } catch (error) {
       console.error('Error in createPost:', error);
     }
   }
 
-  async function createStory() {
+  async function handleAddStory() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !storyImage) return;
-
-      // Upload image
-      const base64 = await new Promise((resolve) => {
-        const reader = new FileReader();
-        fetch(storyImage)
-          .then(response => response.blob())
-          .then(blob => {
-            reader.onload = () => {
-              const base64data = reader.result;
-              resolve(base64data);
-            };
-            reader.readAsDataURL(blob);
-          });
-      });
-
-      const fileName = `${Date.now()}.jpg`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('stories')
-        .upload(`images/${fileName}`, base64.split(',')[1], {
-          contentType: 'image/jpeg',
-          upsert: true
-        });
-
-      if (uploadError) {
-        console.error('Error uploading story:', uploadError);
+      // Request permissions first
+      const permissionResult =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        alert('Permission to access camera roll is required!');
         return;
       }
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('stories')
-        .getPublicUrl(`images/${fileName}`);
+      // Pick the image
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [9, 16],
+        quality: 0.7,
+        base64: true,
+      });
 
-      // Create story
-      const { error: storyError } = await supabase
+      console.log('Image picker result:', result);
+
+      if (!result.canceled) {
+        // Set the image and show the caption input form
+        setStoryImage(result.assets[0].uri);
+        setShowStoryForm(true);
+      }
+    } catch (error) {
+      console.error('Detailed error in handleAddStory:', error);
+      alert('Failed to select image: ' + (error as Error).message);
+    }
+  }
+
+  async function createStory() {
+    try {
+      if (!storyImage) {
+        alert('Please select an image first');
+        return;
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        alert('Please login first');
+        return;
+      }
+
+      // Set expiration date to 24 hours from now
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24);
+
+      // Create story with image and caption
+      const { data, error: storyError } = await supabase
         .from('stories')
         .insert({
           user_id: user.id,
-          image_url: publicUrl,
+          image_url: storyImage,
           caption: storyCaption,
-        });
+          expires_at: expiresAt.toISOString(),
+        })
+        .select()
+        .single();
 
       if (storyError) {
         console.error('Error creating story:', storyError);
+        alert('Failed to create story: ' + storyError.message);
         return;
       }
 
-      // Reset form and navigate
+      console.log('Story created successfully:', data);
+
+      // Reset form and navigate back
       setStoryImage(null);
       setStoryCaption('');
       setShowStoryForm(false);
-      router.push('/');
 
+      alert('Story created successfully!');
+      router.push('/');
     } catch (error) {
-      console.error('Error in createStory:', error);
+      console.error('Detailed error in createStory:', error);
+      alert('Failed to create story: ' + (error as Error).message);
     }
   }
 
@@ -178,20 +216,7 @@ export default function CreateScreen() {
       icon: Camera,
       description: 'Share moments that last 24 hours',
       color: '#4ECDC4',
-      onPress: async () => {
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          aspect: [9, 16],
-          quality: 1,
-        });
-
-        if (!result.canceled) {
-          // Show caption input modal
-          setStoryImage(result.assets[0].uri);
-          setShowStoryForm(true);
-        }
-      },
+      onPress: handleAddStory,
     },
     {
       title: 'Create Advertisement',
@@ -227,7 +252,9 @@ export default function CreateScreen() {
               >
                 <option.icon size={32} color="#fff" />
                 <Text style={styles.optionTitle}>{option.title}</Text>
-                <Text style={styles.optionDescription}>{option.description}</Text>
+                <Text style={styles.optionDescription}>
+                  {option.description}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -239,14 +266,16 @@ export default function CreateScreen() {
               <Text style={styles.cancelButton}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.formTitle}>Create Post</Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={createPost}
               disabled={!title || !content}
             >
-              <Text style={[
-                styles.postButton,
-                (!title || !content) && styles.postButtonDisabled
-              ]}>
+              <Text
+                style={[
+                  styles.postButton,
+                  (!title || !content) && styles.postButtonDisabled,
+                ]}
+              >
                 Post
               </Text>
             </TouchableOpacity>
@@ -273,7 +302,7 @@ export default function CreateScreen() {
             {imageUri ? (
               <View style={styles.imagePreviewContainer}>
                 <Image source={{ uri: imageUri }} style={styles.imagePreview} />
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.removeImageButton}
                   onPress={() => setImageUri(null)}
                 >
@@ -281,7 +310,10 @@ export default function CreateScreen() {
                 </TouchableOpacity>
               </View>
             ) : (
-              <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
+              <TouchableOpacity
+                style={styles.addImageButton}
+                onPress={pickImage}
+              >
                 <ImageIcon size={24} color="#666" />
                 <Text style={styles.addImageText}>Add Image</Text>
               </TouchableOpacity>
@@ -291,41 +323,43 @@ export default function CreateScreen() {
       )}
 
       {showStoryForm && (
-        <Modal
-          animationType="slide"
-          transparent={true}
-          visible={showStoryForm}
-        >
+        <Modal animationType="slide" transparent={true} visible={showStoryForm}>
           <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <TouchableOpacity onPress={() => setShowStoryForm(false)}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowStoryForm(false);
+                    setStoryImage(null);
+                    setStoryCaption('');
+                  }}
+                >
                   <Text style={styles.cancelButton}>Cancel</Text>
                 </TouchableOpacity>
-                <Text style={styles.modalTitle}>New Story</Text>
-                <TouchableOpacity 
-                  onPress={createStory}
-                  disabled={!storyImage}
-                >
-                  <Text style={[
-                    styles.postButton,
-                    !storyImage && styles.postButtonDisabled
-                  ]}>
+                <Text style={styles.modalTitle}>Create Story</Text>
+                <TouchableOpacity onPress={createStory} disabled={!storyImage}>
+                  <Text
+                    style={[
+                      styles.postButton,
+                      !storyImage && styles.postButtonDisabled,
+                    ]}
+                  >
                     Share
                   </Text>
                 </TouchableOpacity>
               </View>
 
               {storyImage && (
-                <Image 
-                  source={{ uri: storyImage }} 
-                  style={styles.storyPreview} 
+                <Image
+                  source={{ uri: storyImage }}
+                  style={styles.storyPreview}
+                  resizeMode="cover"
                 />
               )}
 
               <TextInput
                 style={styles.captionInput}
-                placeholder="Write a caption..."
+                placeholder="Add a caption..."
                 value={storyCaption}
                 onChangeText={setStoryCaption}
                 multiline

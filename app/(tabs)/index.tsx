@@ -1,4 +1,12 @@
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Image,
+  TouchableOpacity,
+  TextInput,
+} from 'react-native';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
@@ -28,12 +36,16 @@ export default function HomeScreen() {
 
   async function fetchProfile() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, username, full_name, avatar_url, role, created_at, updated_at')
+        .select(
+          'id, username, full_name, avatar_url, role, created_at, updated_at',
+        )
         .eq('id', user.id)
         .single();
 
@@ -53,35 +65,51 @@ export default function HomeScreen() {
   async function fetchPosts() {
     const { data } = await supabase
       .from('posts')
-      .select(`
+      .select(
+        `
         *,
         profiles (
           id,
           username,
           avatar_url
         )
-      `)
+      `,
+      )
       .order('created_at', { ascending: false })
       .limit(5);
     if (data) setPosts(data);
   }
 
   async function fetchStories() {
-    const { data } = await supabase
-      .from('stories')
-      .select(`
-        *,
-        profiles (username, avatar_url)
-      `)
-      .gt('expires_at', new Date().toISOString())
-      .order('created_at', { ascending: false });
-    if (data) setStories(data);
+    try {
+      const { data, error } = await supabase
+        .from('stories')
+        .select(
+          `
+          *,
+          profiles (username, avatar_url)
+        `,
+        )
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching stories:', error);
+        return;
+      }
+
+      console.log('Fetched stories:', data);
+      if (data) setStories(data);
+    } catch (error) {
+      console.error('Error in fetchStories:', error);
+    }
   }
 
   async function handleAddStory() {
     try {
       // Request permissions first
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const permissionResult =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult.granted) {
         alert('Permission to access camera roll is required!');
         return;
@@ -99,41 +127,64 @@ export default function HomeScreen() {
       console.log('Image picker result:', result);
 
       if (!result.canceled) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          alert('Please login first');
-          return;
-        }
-
-        // Log the base64 string length to make sure we have data
-        console.log('Base64 string length:', result.assets[0].base64?.length);
-
-        // Create story with base64 image
-        const { data, error: storyError } = await supabase
-          .from('stories')
-          .insert({
-            user_id: user.id,
-            image_url: result.assets[0].uri,
-            caption: '',
-          })
-          .select()
-          .single();
-
-        if (storyError) {
-          console.error('Error creating story:', storyError);
-          alert('Failed to create story: ' + storyError.message);
-          return;
-        }
-
-        console.log('Story created successfully:', data);
-        
-        // Refresh stories
-        await fetchStories();
-        
-        alert('Story created successfully!');
+        // Set the image and show the caption input form
+        setStoryImage(result.assets[0].uri);
+        setShowStoryForm(true);
       }
     } catch (error) {
       console.error('Detailed error in handleAddStory:', error);
+      alert('Failed to select image: ' + (error as Error).message);
+    }
+  }
+
+  async function submitStory() {
+    try {
+      if (!storyImage) {
+        alert('Please select an image first');
+        return;
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        alert('Please login first');
+        return;
+      }
+
+      // Set expiration date to 24 hours from now
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24);
+
+      // Create story with image, caption and expiration
+      const { data, error: storyError } = await supabase
+        .from('stories')
+        .insert({
+          user_id: user.id,
+          image_url: storyImage,
+          caption: storyCaption,
+          expires_at: expiresAt.toISOString(),
+        })
+        .select()
+        .single();
+
+      if (storyError) {
+        console.error('Error creating story:', storyError);
+        alert('Failed to create story: ' + storyError.message);
+        return;
+      }
+
+      console.log('Story created successfully:', data);
+
+      // Reset form and refresh stories
+      setStoryImage(null);
+      setStoryCaption('');
+      setShowStoryForm(false);
+      await fetchStories();
+
+      alert('Story created successfully!');
+    } catch (error) {
+      console.error('Detailed error in submitStory:', error);
       alert('Failed to create story: ' + (error as Error).message);
     }
   }
@@ -147,16 +198,13 @@ export default function HomeScreen() {
       </View>
 
       {/* Stories */}
-      <ScrollView 
-        horizontal 
+      <ScrollView
+        horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.storiesContainer}
         contentContainerStyle={styles.storiesList}
       >
-        <TouchableOpacity 
-          style={styles.storyItem}
-          onPress={handleAddStory}
-        >
+        <TouchableOpacity style={styles.storyItem} onPress={handleAddStory}>
           <View style={styles.addStoryButton}>
             <Plus size={24} color="#666" />
           </View>
@@ -164,8 +212,8 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         {stories.map((story) => (
-          <TouchableOpacity 
-            key={story.id} 
+          <TouchableOpacity
+            key={story.id}
             style={styles.storyItem}
             onPress={() => router.push(`/stories/${story.id}`)}
           >
@@ -182,6 +230,46 @@ export default function HomeScreen() {
         ))}
       </ScrollView>
 
+      {/* Story Form Modal */}
+      {showStoryForm && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create Story</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowStoryForm(false);
+                  setStoryImage(null);
+                  setStoryCaption('');
+                }}
+              >
+                <Text style={styles.closeButton}>X</Text>
+              </TouchableOpacity>
+            </View>
+
+            {storyImage && (
+              <Image
+                source={{ uri: storyImage }}
+                style={styles.previewImage}
+                resizeMode="cover"
+              />
+            )}
+
+            <TextInput
+              style={styles.captionInput}
+              placeholder="Add a caption..."
+              value={storyCaption}
+              onChangeText={setStoryCaption}
+              multiline
+            />
+
+            <TouchableOpacity style={styles.submitButton} onPress={submitStory}>
+              <Text style={styles.submitButtonText}>Post Story</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Posts */}
       <View style={styles.posts}>
         {posts.map((post) => (
@@ -189,8 +277,9 @@ export default function HomeScreen() {
             <View style={styles.postHeader}>
               <Image
                 source={{
-                  uri: (post as any).profiles?.avatar_url ||
-                    'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80'
+                  uri:
+                    (post as any).profiles?.avatar_url ||
+                    'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80',
                 }}
                 style={styles.authorAvatar}
               />
@@ -203,7 +292,7 @@ export default function HomeScreen() {
                 </Text>
               </View>
             </View>
-            
+
             {post.image_url && (
               <Image
                 source={{ uri: post.image_url }}
@@ -212,13 +301,10 @@ export default function HomeScreen() {
             )}
             <View style={styles.postContent}>
               <Text style={styles.postTitle}>{post.title}</Text>
-              <Text 
-                style={styles.postText}
-                numberOfLines={3}
-              >
+              <Text style={styles.postText} numberOfLines={3}>
                 {post.content}
               </Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.readMoreButton}
                 onPress={() => router.push('/posts')}
               >
@@ -358,5 +444,75 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#000',
     fontWeight: '500',
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modalContent: {
+    width: '90%',
+    backgroundColor: 'white',
+    borderRadius: 15,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  modalHeader: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  closeButton: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#666',
+  },
+  previewImage: {
+    width: '100%',
+    height: 300,
+    borderRadius: 10,
+    marginBottom: 15,
+  },
+  captionInput: {
+    width: '100%',
+    height: 80,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 15,
+    textAlignVertical: 'top',
+  },
+  submitButton: {
+    width: '100%',
+    backgroundColor: '#0066ff',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  submitButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 });
