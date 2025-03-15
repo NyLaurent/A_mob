@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
 import { useRouter } from 'expo-router';
-import { Plus } from 'lucide-react-native';
+import { Plus, Heart, MessageCircle } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'lucide-react-native';
 
@@ -273,45 +273,49 @@ export default function HomeScreen() {
       {/* Posts */}
       <View style={styles.posts}>
         {posts.map((post) => (
-          <View key={post.id} style={styles.postCard}>
-            <View style={styles.postHeader}>
-              <Image
-                source={{
-                  uri:
-                    (post as any).profiles?.avatar_url ||
-                    'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80',
-                }}
-                style={styles.authorAvatar}
-              />
-              <View style={styles.authorInfo}>
-                <Text style={styles.authorName}>
-                  {(post as any).profiles?.username}
-                </Text>
-                <Text style={styles.postDate}>
-                  {new Date(post.created_at).toLocaleDateString()}
-                </Text>
-              </View>
-            </View>
-
+          <TouchableOpacity
+            key={post.id}
+            style={styles.postCard}
+            onPress={() => router.push(`/posts/${post.id}`)}
+          >
             {post.image_url && (
               <Image
                 source={{ uri: post.image_url }}
                 style={styles.postImage}
+                resizeMode="cover"
               />
             )}
             <View style={styles.postContent}>
               <Text style={styles.postTitle}>{post.title}</Text>
-              <Text style={styles.postText} numberOfLines={3}>
-                {post.content}
+              {post.category && (
+                <View style={styles.categoryBadge}>
+                  <Text style={styles.categoryText}>{post.category}</Text>
+                </View>
+              )}
+              <Text style={styles.postText} numberOfLines={2}>
+                {post.short_description || ''}
               </Text>
-              <TouchableOpacity
-                style={styles.readMoreButton}
-                onPress={() => router.push('/posts')}
-              >
-                <Text style={styles.readMoreText}>Read More</Text>
-              </TouchableOpacity>
+
+              <View style={styles.postActions}>
+                <TouchableOpacity style={styles.actionButton}>
+                  <Heart size={18} color="#666" />
+                  <Text style={styles.actionText}>Like</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.actionButton}>
+                  <MessageCircle size={18} color="#666" />
+                  <Text style={styles.actionText}>Comment</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.readMoreButton}
+                  onPress={() => router.push(`/posts/${post.id}`)}
+                >
+                  <Text style={styles.readMoreText}>Read More</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
     </ScrollView>
@@ -377,34 +381,10 @@ const styles = StyleSheet.create({
   posts: {
     padding: 20,
   },
-  postHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-  },
-  authorAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12,
-  },
-  authorInfo: {
-    flex: 1,
-  },
-  authorName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-  },
-  postDate: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
-  },
   postCard: {
     backgroundColor: '#fff',
-    borderRadius: 15,
-    marginBottom: 20,
+    borderRadius: 12,
+    marginBottom: 16,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: {
@@ -417,7 +397,7 @@ const styles = StyleSheet.create({
   },
   postImage: {
     width: '100%',
-    height: 200,
+    height: 150,
   },
   postContent: {
     padding: 15,
@@ -426,6 +406,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 8,
+  },
+  categoryBadge: {
+    backgroundColor: '#e6f7ff',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  categoryText: {
+    color: '#0066ff',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
   postText: {
     fontSize: 14,
@@ -444,6 +438,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#000',
     fontWeight: '500',
+  },
+  postActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  actionText: {
+    marginLeft: 4,
+    fontSize: 14,
+    color: '#666',
   },
   modalOverlay: {
     position: 'absolute',

@@ -52,23 +52,11 @@ export default function PostsScreen() {
   };
 
   const renderPost = ({ item }: { item: Post }) => (
-    <View style={styles.postCard}>
-      <View style={styles.postHeader}>
-        <Image
-          source={{
-            uri: item.profiles?.avatar_url ||
-              'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80'
-          }}
-          style={styles.avatar}
-        />
-        <View>
-          <Text style={styles.username}>{item.profiles?.username}</Text>
-          <Text style={styles.timestamp}>
-            {new Date(item.created_at).toLocaleDateString()}
-          </Text>
-        </View>
-      </View>
-
+    <TouchableOpacity
+      key={item.id}
+      style={styles.postCard}
+      onPress={() => router.push(`/posts/${item.id}`)}
+    >
       {item.image_url && (
         <Image
           source={{ uri: item.image_url }}
@@ -76,63 +64,24 @@ export default function PostsScreen() {
           resizeMode="cover"
         />
       )}
-
       <View style={styles.postContent}>
         <Text style={styles.postTitle}>{item.title}</Text>
-        <Text style={styles.postText} numberOfLines={3}>
-          {item.content}
+        {item.category && (
+          <View style={styles.categoryBadge}>
+            <Text style={styles.categoryText}>{item.category}</Text>
+          </View>
+        )}
+        <Text style={styles.postText} numberOfLines={2}>
+          {item.short_description || ""}
         </Text>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.readMoreButton}
-          onPress={() => router.push({
-            pathname: '/post-details',
-            params: { id: item.id }
-          })}
+          onPress={() => router.push(`/posts/${item.id}`)}
         >
           <Text style={styles.readMoreText}>Read More</Text>
         </TouchableOpacity>
       </View>
-
-      <View style={styles.postActions}>
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => toggleLike(item.id)}
-        >
-          <Heart 
-            size={24} 
-            color={likedPosts.has(item.id) ? '#ff3b30' : '#666'}
-            fill={likedPosts.has(item.id) ? '#ff3b30' : 'none'}
-          />
-          <Text style={styles.actionText}>
-            {likeCounts[item.id] || 0} Likes
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => setShowComments(showComments === item.id ? null : item.id)}
-        >
-          <MessageCircle size={24} color="#666" />
-          <Text style={styles.actionText}>Comment</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton}>
-          <Share2 size={24} color="#666" />
-          <Text style={styles.actionText}>Share</Text>
-        </TouchableOpacity>
-      </View>
-
-      {showComments === item.id && (
-        <View style={styles.commentsSection}>
-          <TextInput
-            style={styles.commentInput}
-            placeholder="Add a comment..."
-            value={newComment}
-            onChangeText={setNewComment}
-            onSubmitEditing={() => addComment(item.id)}
-            returnKeyType="send"
-          />
-        </View>
-      )}
-    </View>
+    </TouchableOpacity>
   );
 
   return (
@@ -183,7 +132,7 @@ const styles = StyleSheet.create({
   },
   postCard: {
     backgroundColor: '#fff',
-    borderRadius: 16,
+    borderRadius: 12,
     marginBottom: 16,
     overflow: 'hidden',
     shadowColor: '#000',
@@ -217,20 +166,35 @@ const styles = StyleSheet.create({
   },
   postImage: {
     width: '100%',
-    height: 300,
+    height: 150,
   },
   postContent: {
-    padding: 16,
+    padding: 15,
   },
   postTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 8,
   },
+  categoryBadge: {
+    backgroundColor: '#e6f7ff',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  categoryText: {
+    color: '#0066ff',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
   postText: {
-    fontSize: 16,
-    color: '#333',
-    lineHeight: 24,
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 12,
+    lineHeight: 20,
   },
   postActions: {
     flexDirection: 'row',
@@ -256,7 +220,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     backgroundColor: '#f5f5f5',
     borderRadius: 15,
-    marginTop: 8,
   },
   readMoreText: {
     fontSize: 14,
