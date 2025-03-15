@@ -19,14 +19,26 @@ export default function HomeScreen() {
   }, []);
 
   async function fetchProfile() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data } = await supabase
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
         .from('profiles')
-        .select()
+        .select('id, username, full_name, avatar_url, role, created_at, updated_at')
         .eq('id', user.id)
         .single();
-      setProfile(data);
+
+      if (error) {
+        console.error('Error fetching profile:', error);
+        return;
+      }
+
+      if (data) {
+        setProfile(data);
+      }
+    } catch (error) {
+      console.error('Error in fetchProfile:', error);
     }
   }
 
@@ -58,7 +70,7 @@ export default function HomeScreen() {
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.greeting}>
-          Hello, {profile?.username || 'User'}
+          Hello, {profile?.username || 'Guest'}
         </Text>
       </View>
 

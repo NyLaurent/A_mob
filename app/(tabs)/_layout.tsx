@@ -4,45 +4,71 @@ import { TouchableOpacity, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 export default function TabLayout() {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     fetchUnreadCount();
-    subscribeToMessages();
+    let subscription: RealtimeChannel;
+    
+    // Subscribe to both messages and chat_participants tables
+    const setupSubscription = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      subscription = supabase
+        .channel('unread-notifications')
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `recipient_id=eq.${user.id}`,
+        }, () => {
+          fetchUnreadCount();
+        })
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_participants',
+          filter: `user_id=eq.${user.id}`,
+        }, () => {
+          fetchUnreadCount();
+        })
+        .subscribe();
+    };
+
+    setupSubscription();
+    
+    return () => {
+      if (subscription) subscription.unsubscribe();
+    };
   }, []);
 
   async function fetchUnreadCount() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    const { data } = await supabase
-      .from('chat_participants')
-      .select('unread_messages')
-      .eq('user_id', user.id);
+      // Get all unread messages count
+      const { data, error } = await supabase
+        .from('chat_participants')
+        .select('unread_messages')
+        .eq('user_id', user.id);
 
-    if (data) {
-      const total = data.reduce((sum, item) => sum + (item.unread_messages || 0), 0);
-      setUnreadCount(total);
+      if (error) {
+        console.error('Error fetching unread count:', error);
+        return;
+      }
+
+      if (data) {
+        const total = data.reduce((sum, item) => sum + (item.unread_messages || 0), 0);
+        setUnreadCount(total);
+      }
+    } catch (error) {
+      console.error('Error in fetchUnreadCount:', error);
     }
-  }
-
-  async function subscribeToMessages() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    return supabase
-      .channel('unread-messages')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'chat_participants',
-        filter: `user_id=eq.${user.id}`,
-      }, () => {
-        fetchUnreadCount();
-      })
-      .subscribe();
   }
 
   return (
@@ -67,6 +93,9 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <MessageSquare size={24} color={color} />,
           title: 'Messages',
           tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: '#ff3b30',
+          }
         }}
       />
       <Tabs.Screen

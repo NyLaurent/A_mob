@@ -7,16 +7,34 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
-type ChatParticipant = Database['public']['Tables']['chat_participants']['Row'] & {
-  unread_messages: number;
-};
+type ChatParticipant = Database['public']['Tables']['chat_participants']['Row'];
 type Chat = Database['public']['Tables']['chats']['Row'] & {
   profiles: Profile;
   last_message?: Database['public']['Tables']['messages']['Row'] & {
     profiles: Profile;
   };
   messages: Array<Database['public']['Tables']['messages']['Row']>;
-  unread_messages: number;
+  latest_message_time: string;
+};
+
+type ChatResponse = {
+  id: string;
+  chat_id: string;
+  chats: {
+    id: string;
+    created_at: string;
+    messages: Array<{
+      id: string;
+      content: string;
+      created_at: string;
+      user_id: string;
+      profiles: Profile;
+    }>;
+    chat_participants: Array<{
+      user_id: string;
+      profiles: Profile;
+    }>;
+  };
 };
 
 export default function MessagesScreen() {
@@ -26,7 +44,6 @@ export default function MessagesScreen() {
   const [users, setUsers] = useState<Profile[]>([]);
   const router = useRouter();
   const flatListRef = React.useRef<FlatList>(null);
-  const [totalUnreadMessages, setTotalUnreadMessages] = useState(0);
 
   useEffect(() => {
     fetchChats();
@@ -37,29 +54,32 @@ export default function MessagesScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('chat_participants')
       .select(`
-        chat:chats (
+        id,
+        chat_id,
+        chats (
           id,
           created_at,
-          messages!messages_chat_id_fkey (
+          messages (
             id,
             content,
             created_at,
             user_id,
-            profiles!messages_user_id_fkey (
-              id,
-              username
-            )
-          ),
-          participants:chat_participants (
-            profiles!chat_participants_user_id_fkey (
+            profiles (
               id,
               username,
               avatar_url
-            ),
-            unread_messages
+            )
+          ),
+          chat_participants (
+            user_id,
+            profiles (
+              id,
+              username,
+              avatar_url
+            )
           )
         )
       `)
@@ -67,44 +87,39 @@ export default function MessagesScreen() {
 
     if (data) {
       const formattedChats = data
-        .map((item: any) => {
-          const otherParticipant = item.chat.participants
-            .find((p: any) => p.profiles.id !== user.id)?.profiles;
-          
-          // Sort messages by created_at in descending order to get the latest first
-          const messages = item.chat.messages ? 
-            [...item.chat.messages].sort((a, b) => 
-              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            ) : [];
-          
-          const lastMessage = messages.length > 0 ? 
-            {
-              ...messages[0],
-              profiles: messages[0].profiles
-            } : null;
-          
-          const unreadMessages = item.chat.participants
-            .find((p: any) => p.profiles.id === user.id)?.unread_messages || 0;
-          
-          return {
-            ...item.chat,
-            messages: messages,
-            last_message: lastMessage,
-            profiles: otherParticipant,
-            unread_messages: unreadMessages,
-            latest_message_time: lastMessage?.created_at || item.chat.created_at,
-          };
+        .filter(item => item.chats)
+        .map(item => {
+          const chatData = item.chats as any;
+          const otherParticipant = chatData.chat_participants
+            ?.find((p: { user_id: string }) => p.user_id !== user.id)?.profiles;
+
+          const messages = chatData.messages || [];
+          const sortedMessages = [...messages].sort((a, b) => 
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+
+          const lastMessage = sortedMessages[0];
+
+          const chat: Chat = {
+            id: chatData.id,
+            created_at: chatData.created_at,
+            messages: sortedMessages,
+            last_message: lastMessage ? {
+              ...lastMessage,
+              profiles: lastMessage.profiles
+            } : undefined,
+            profiles: otherParticipant!,
+            latest_message_time: lastMessage?.created_at || chatData.created_at
+          } as Chat;
+
+          return chat;
         })
-        // Sort chats by latest message time
         .sort((a, b) => 
-          new Date(b.latest_message_time).getTime() - new Date(a.latest_message_time).getTime()
+          new Date(b.latest_message_time).getTime() - 
+          new Date(a.latest_message_time).getTime()
         );
 
       setChats(formattedChats);
-      
-      // Calculate total unread messages
-      const total = formattedChats.reduce((sum, chat) => sum + (chat.unread_messages || 0), 0);
-      setTotalUnreadMessages(total);
     }
   }
 
@@ -115,18 +130,11 @@ export default function MessagesScreen() {
     return supabase
       .channel('chat-updates')
       .on('postgres_changes', {
-        event: '*',
+        event: 'INSERT',
         schema: 'public',
         table: 'messages',
       }, async (payload: any) => {
         if (payload.new.user_id !== user.id) {
-          // Increment unread messages for the chat
-          await supabase
-            .from('chat_participants')
-            .update({ unread_messages: supabase.rpc('increment_unread') })
-            .eq('chat_id', payload.new.chat_id)
-            .eq('user_id', user.id);
-
           fetchChats();
         }
       })
@@ -140,7 +148,7 @@ export default function MessagesScreen() {
     const { data } = await supabase
       .from('profiles')
       .select('*')
-      .neq('id', user.id); // Don't include current user
+      .neq('id', user.id);
 
     if (data) setUsers(data);
   }
@@ -216,28 +224,10 @@ export default function MessagesScreen() {
     }
   }
 
-  async function markChatAsRead(chatId: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    await supabase
-      .from('chat_participants')
-      .update({ unread_messages: 0 })
-      .eq('chat_id', chatId)
-      .eq('user_id', user.id);
-
-    // Refresh the chat list to update unread counts
-    fetchChats();
-  }
-
   const renderChatItem = ({ item }: { item: Chat }) => (
     <TouchableOpacity 
-      style={[
-        styles.chatItem,
-        item.unread_messages > 0 && styles.unreadChat
-      ]}
+      style={styles.chatItem}
       onPress={() => {
-        markChatAsRead(item.id);
         router.push({
           pathname: '/chat',
           params: { 
@@ -255,41 +245,28 @@ export default function MessagesScreen() {
           }}
           style={styles.avatar}
         />
-        {item.unread_messages > 0 && (
-          <View style={styles.unreadBadge}>
-            <Text style={styles.unreadBadgeText}>
-              {item.unread_messages}
-            </Text>
-          </View>
-        )}
       </View>
       <View style={styles.chatInfo}>
-        <Text style={[
-          styles.username,
-          item.unread_messages > 0 && styles.unreadUsername
-        ]}>
+        <Text style={styles.username}>
           {item.profiles?.username}
         </Text>
         <Text 
-          style={[
-            styles.lastMessage,
-            item.unread_messages > 0 && styles.unreadLastMessage
-          ]} 
+          style={styles.lastMessage}
           numberOfLines={1}
         >
           {item.last_message ? (
-            <>
-              {item.last_message.user_id === item.profiles?.id ? '' : 'You: '}
-              {item.last_message.content}
-            </>
+            <Text>
+              {item.last_message.user_id === item.profiles?.id ? (
+                item.last_message.content
+              ) : (
+                <>You: {item.last_message.content}</>
+              )}
+            </Text>
           ) : 'Start a conversation'}
         </Text>
       </View>
       {item.last_message && (
-        <Text style={[
-          styles.time,
-          item.unread_messages > 0 && styles.unreadTime
-        ]}>
+        <Text style={styles.time}>
           {formatMessageTime(item.last_message.created_at)}
         </Text>
       )}
@@ -383,17 +360,9 @@ export default function MessagesScreen() {
           renderItem={renderChatItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.chatList}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-          onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
-          inverted={false}
           removeClippedSubviews={true}
           maxToRenderPerBatch={10}
           windowSize={10}
-          getItemLayout={(data, index) => ({
-            length: 80, // approximate height of message item
-            offset: 80 * index,
-            index,
-          })}
         />
       )}
       {renderUsersModal()}
@@ -573,40 +542,7 @@ const styles = StyleSheet.create({
     color: '#666',
     textTransform: 'capitalize',
   },
-  unreadChat: {
-    backgroundColor: '#f8f9fa',
-  },
-  unreadUsername: {
-    fontWeight: '700',
-    color: '#000',
-  },
-  unreadLastMessage: {
-    color: '#000',
-    fontWeight: '600',
-  },
-  unreadTime: {
-    color: '#000',
-    fontWeight: '600',
-  },
   avatarContainer: {
-    position: 'relative',
-  },
-  unreadBadge: {
-    position: 'absolute',
-    right: -2,
-    top: -2,
-    backgroundColor: '#ff3b30',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  unreadBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
+    marginRight: 16,
   },
 });
