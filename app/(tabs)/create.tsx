@@ -50,63 +50,25 @@ export default function CreateScreen() {
       } = await supabase.auth.getUser();
       if (!user) {
         console.error('No user found');
+        alert('Please login first');
         return;
       }
 
-      let image_url = null;
-      if (imageUri) {
-        try {
-          // Convert image to base64 string directly
-          const base64 = await new Promise((resolve) => {
-            const reader = new FileReader();
-            fetch(imageUri)
-              .then((response) => response.blob())
-              .then((blob) => {
-                reader.onload = () => {
-                  const base64data = reader.result;
-                  resolve(base64data);
-                };
-                reader.readAsDataURL(blob);
-              });
-          });
-
-          // Upload to Supabase storage
-          const fileName = `${Date.now()}.jpg`;
-          const { data, error: uploadError } = await supabase.storage
-            .from('posts')
-            .upload(`images/${fileName}`, base64.split(',')[1], {
-              contentType: 'image/jpeg',
-              upsert: true,
-            });
-
-          if (uploadError) {
-            console.error('Error uploading image:', uploadError);
-          } else {
-            // Get public URL
-            const {
-              data: { publicUrl },
-            } = supabase.storage
-              .from('posts')
-              .getPublicUrl(`images/${fileName}`);
-            image_url = publicUrl;
-          }
-        } catch (imageError) {
-          console.error('Error processing image:', imageError);
-        }
-      }
-
-      // Create post with image if available
+      // Create post with direct image URI (same approach as stories)
       const { error: postError } = await supabase.from('posts').insert({
         user_id: user.id,
         title,
         content,
-        image_url,
+        image_url: imageUri, // Use the image URI directly like in stories
       });
 
       if (postError) {
         console.error('Error creating post:', postError);
+        alert('Failed to create post: ' + postError.message);
         return;
       }
+
+      console.log('Post created successfully with image:', imageUri);
 
       // Reset form and navigate
       setTitle('');
@@ -114,8 +76,11 @@ export default function CreateScreen() {
       setImageUri(null);
       setShowPostForm(false);
       router.push('/posts');
+
+      alert('Post created successfully!');
     } catch (error) {
       console.error('Error in createPost:', error);
+      alert('Failed to create post: ' + (error as Error).message);
     }
   }
 
