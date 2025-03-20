@@ -1,8 +1,20 @@
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  ScrollView,
+} from 'react-native';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
-import { Settings, Grid2x2 as Grid, BookMarked, Heart } from 'lucide-react-native';
+import {
+  Settings,
+  Grid2x2 as Grid,
+  BookMarked,
+  Heart,
+} from 'lucide-react-native';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 type Post = Database['public']['Tables']['posts']['Row'];
@@ -17,7 +29,9 @@ export default function ProfileScreen() {
   }, []);
 
   async function fetchProfile() {
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (user) {
       const { data } = await supabase
         .from('profiles')
@@ -29,7 +43,9 @@ export default function ProfileScreen() {
   }
 
   async function fetchUserPosts() {
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (user) {
       const { data } = await supabase
         .from('posts')
@@ -55,14 +71,15 @@ export default function ProfileScreen() {
       <View style={styles.profileSection}>
         <Image
           source={{
-            uri: profile?.avatar_url ||
-              'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80'
+            uri:
+              profile?.avatar_url ||
+              'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80',
           }}
           style={styles.profileImage}
         />
         <Text style={styles.username}>{profile?.username}</Text>
         <Text style={styles.role}>{profile?.role}</Text>
-        
+
         <View style={styles.stats}>
           <View style={styles.statItem}>
             <Text style={styles.statNumber}>{posts.length}</Text>
@@ -230,13 +247,22 @@ const styles = StyleSheet.create({
   signOutButton: {
     margin: 20,
     padding: 16,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#ff4444',
     borderRadius: 12,
     alignItems: 'center',
+    marginTop: 30,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2, 
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   signOutText: {
     fontSize: 16,
-    color: '#ff4444',
+    color: '#ffffff',
     fontWeight: '600',
   },
 });
